@@ -3,32 +3,57 @@
 
 #include <stdio.h>
 #include <math.h>
+#include <vector>
 #include <glut.h>
 #define maxHt 800
 #define maxWd 600
 #define maxVer 10000
+float r = 0.0;
+float g = 0.0;
+float b = 0.0;
 
-FILE *fp;
+FILE *stream;
+class Point
+{
+public:
+	Point(int, int);
+	int x, y;
+
+	int getX() {
+		return this->x;
+	}
+	int getY() {
+		return this->y;
+	}
+};
+
+Point::Point(int x, int y)
+{
+	this->x = x;
+	this->y = y;
+}
+std::vector<Point> vertexList;
+
 
 // Start from lower left corner
-typedef struct edgebucket
+typedef struct edgelist
 {
-	int ymax; //max y-coordinate of edge
-	float xofymin; //x-coordinate of lowest edge point updated only in aet
+	float xint; //x-coordinate of lowest edge point updated only in aet
 	float slopeinverse;
-}EdgeBucket;
+	int yhigh; //max y-coordinate of edge
+}EL;
 
-typedef struct edgetabletup
+typedef struct edgetable
 {
 	// the array will give the scanline number
 	// The edge table (ET) with edges entries sorted 
 	// in increasing y and x of the lower end
 
-	int countEdgeBucket; //no. of edgebuckets
-	EdgeBucket buckets[maxVer];
-}EdgeTableTuple;
+	int ELcount; //no. of edgebuckets
+	EL el[maxVer];
+}ET;
 
-EdgeTableTuple EdgeTable[maxHt], ActiveEdgeTuple;
+ET EdgeTable[maxHt], AEL;
 
 
 // Scanline Function
@@ -37,24 +62,24 @@ void initEdgeTable()
 	int i;
 	for (i = 0; i<maxHt; i++)
 	{
-		EdgeTable[i].countEdgeBucket = 0;
+		EdgeTable[i].ELcount = 0;
 	}
 
-	ActiveEdgeTuple.countEdgeBucket = 0;
+	AEL.ELcount = 0;
 }
 
 
-void printTuple(EdgeTableTuple *tup)
+void printTuple(ET *tup)
 {
 	int j;
 
-	if (tup->countEdgeBucket)
-		printf("\nCount %d-----\n", tup->countEdgeBucket);
+	if (tup->ELcount)
+		printf("\nCount %d-----\n", tup->ELcount);
 
-	for (j = 0; j<tup->countEdgeBucket; j++)
+	for (j = 0; j<tup->ELcount; j++)
 	{
 		printf(" %d+%.2f+%.2f",
-			tup->buckets[j].ymax, tup->buckets[j].xofymin, tup->buckets[j].slopeinverse);
+			tup->el[j].yhigh, tup->el[j].xint, tup->el[j].slopeinverse);
 	}
 }
 
@@ -64,7 +89,7 @@ void printTable()
 
 	for (i = 0; i<maxHt; i++)
 	{
-		if (EdgeTable[i].countEdgeBucket)
+		if (EdgeTable[i].ELcount)
 			printf("\nScanline %d", i);
 
 		printTuple(&EdgeTable[i]);
@@ -73,44 +98,44 @@ void printTable()
 
 
 /* Function to sort an array using insertion sort*/
-void insertionSort(EdgeTableTuple *ett)
+void insertionSort(ET *ett)
 {
 	int i, j;
-	EdgeBucket temp;
+	EL temp;
 
-	for (i = 1; i < ett->countEdgeBucket; i++)
+	for (i = 1; i < ett->ELcount; i++)
 	{
-		temp.ymax = ett->buckets[i].ymax;
-		temp.xofymin = ett->buckets[i].xofymin;
-		temp.slopeinverse = ett->buckets[i].slopeinverse;
+		temp.yhigh = ett->el[i].yhigh;
+		temp.xint = ett->el[i].xint;
+		temp.slopeinverse = ett->el[i].slopeinverse;
 		j = i - 1;
 
-		while ((temp.xofymin < ett->buckets[j].xofymin) && (j >= 0))
+		while ((temp.xint < ett->el[j].xint) && (j >= 0))
 		{
-			ett->buckets[j + 1].ymax = ett->buckets[j].ymax;
-			ett->buckets[j + 1].xofymin = ett->buckets[j].xofymin;
-			ett->buckets[j + 1].slopeinverse = ett->buckets[j].slopeinverse;
+			ett->el[j + 1].yhigh = ett->el[j].yhigh;
+			ett->el[j + 1].xint = ett->el[j].xint;
+			ett->el[j + 1].slopeinverse = ett->el[j].slopeinverse;
 			j = j - 1;
 		}
-		ett->buckets[j + 1].ymax = temp.ymax;
-		ett->buckets[j + 1].xofymin = temp.xofymin;
-		ett->buckets[j + 1].slopeinverse = temp.slopeinverse;
+		ett->el[j + 1].yhigh = temp.yhigh;
+		ett->el[j + 1].xint = temp.xint;
+		ett->el[j + 1].slopeinverse = temp.slopeinverse;
 	}
 }
 
 
-void storeEdgeInTuple(EdgeTableTuple *receiver, int ym, int xm, float slopInv)
+void storeEdgeInTuple(ET *receiver, int ym, int xm, float slopInv)
 {
 	// both used for edgetable and active edge table..
 	// The edge tuple sorted in increasing ymax and x of the lower end.
-	(receiver->buckets[(receiver)->countEdgeBucket]).ymax = ym;
-	(receiver->buckets[(receiver)->countEdgeBucket]).xofymin = (float)xm;
-	(receiver->buckets[(receiver)->countEdgeBucket]).slopeinverse = slopInv;
+	(receiver->el[(receiver)->ELcount]).yhigh = ym;
+	(receiver->el[(receiver)->ELcount]).xint = (float)xm;
+	(receiver->el[(receiver)->ELcount]).slopeinverse = slopInv;
 
 	// sort the buckets
 	insertionSort(receiver);
 
-	(receiver->countEdgeBucket)++;
+	(receiver->ELcount)++;
 
 
 }
@@ -154,35 +179,35 @@ void storeEdgeInTable(int x1, int y1, int x2, int y2)
 
 }
 
-void removeEdgeByYmax(EdgeTableTuple *Tup, int yy)
+void removeEdgeByYmax(ET *Tup, int yy)
 {
 	int i, c;
-	for (i = 0; i< Tup->countEdgeBucket; i++)
+	for (i = 0; i< Tup->ELcount; i++)
 	{
-		if (Tup->buckets[i].ymax == yy)
+		if (Tup->el[i].yhigh == yy)
 		{
 			printf("\nRemoved at %d", yy);
 
-			for (c = i; c < Tup->countEdgeBucket - 1; c++)
+			for (c = i; c < Tup->ELcount - 1; c++)
 			{
-				Tup->buckets[c].ymax = Tup->buckets[c+1].ymax;
-				Tup->buckets[c].xofymin = Tup->buckets[c+1].xofymin;
-				Tup->buckets[c].slopeinverse = Tup->buckets[c+1].slopeinverse;
+				Tup->el[c].yhigh = Tup->el[c + 1].yhigh;
+				Tup->el[c].xint = Tup->el[c + 1].xint;
+				Tup->el[c].slopeinverse = Tup->el[c + 1].slopeinverse;
 			}
-			Tup->countEdgeBucket--;
+			Tup->ELcount--;
 			i--;
 		}
 	}
 }
 
 
-void updatexbyslopeinv(EdgeTableTuple *Tup)
+void updatexbyslopeinv(ET *Tup)
 {
 	int i;
 
-	for (i = 0; i<Tup->countEdgeBucket; i++)
+	for (i = 0; i<Tup->ELcount; i++)
 	{
-		(Tup->buckets[i]).xofymin = (Tup->buckets[i]).xofymin + (Tup->buckets[i]).slopeinverse;
+		(Tup->el[i]).xint = (Tup->el[i]).xint + (Tup->el[i]).slopeinverse;
 	}
 }
 
@@ -206,22 +231,22 @@ void ScanlineFill()
 
 		// 1. Move from ET bucket y to the
 		// AET those edges whose ymin = y (entering edges)
-		for (j = 0; j<EdgeTable[i].countEdgeBucket; j++)
+		for (j = 0; j<EdgeTable[i].ELcount; j++)
 		{
-			storeEdgeInTuple(&ActiveEdgeTuple, EdgeTable[i].buckets[j].
-				ymax, EdgeTable[i].buckets[j].xofymin,
-				EdgeTable[i].buckets[j].slopeinverse);
+			storeEdgeInTuple(&AEL, EdgeTable[i].el[j].
+				yhigh, EdgeTable[i].el[j].xint,
+				EdgeTable[i].el[j].slopeinverse);
 		}
-		printTuple(&ActiveEdgeTuple);
+		printTuple(&AEL);
 
 		// 2. Remove from AET those edges for 
 		// which y=ymax (not involved in next scan line)
-		removeEdgeByYmax(&ActiveEdgeTuple, i);
+		removeEdgeByYmax(&AEL, i);
 
 		//sort AET (remember: ET is presorted)
-		insertionSort(&ActiveEdgeTuple);
+		insertionSort(&AEL);
 
-		printTuple(&ActiveEdgeTuple);
+		printTuple(&AEL);
 
 		//3. Fill lines on scan line y by using pairs of x-coords from AET
 		j = 0;
@@ -231,12 +256,12 @@ void ScanlineFill()
 		x2 = 0;
 		ymax1 = 0;
 		ymax2 = 0;
-		while (j<ActiveEdgeTuple.countEdgeBucket)
+		while (j<AEL.ELcount)
 		{
 			if (coordCount % 2 == 0)
 			{
-				x1 = (int)(ActiveEdgeTuple.buckets[j].xofymin);
-				ymax1 = ActiveEdgeTuple.buckets[j].ymax;
+				x1 = (int)(AEL.el[j].xint);
+				ymax1 = AEL.el[j].yhigh;
 				if (x1 == x2)
 				{
 					/* three cases can arrive-
@@ -263,8 +288,8 @@ void ScanlineFill()
 			}
 			else
 			{
-				x2 = (int)ActiveEdgeTuple.buckets[j].xofymin;
-				ymax2 = ActiveEdgeTuple.buckets[j].ymax;
+				x2 = (int)AEL.el[j].xint;
+				ymax2 = AEL.el[j].yhigh;
 
 				FillFlag = 0;
 
@@ -297,8 +322,7 @@ void ScanlineFill()
 				if (FillFlag)
 				{
 					//drawing actual lines...
-					glColor3f(0.0f, 0.7f, 0.0f);
-
+					glColor3f(r, g, b);
 					glBegin(GL_LINES);
 					glVertex2i(x1, i);
 					glVertex2i(x2, i);
@@ -315,7 +339,7 @@ void ScanlineFill()
 
 
 		// 5. For each nonvertical edge remaining in AET, update x for new y
-		updatexbyslopeinv(&ActiveEdgeTuple);
+		updatexbyslopeinv(&AEL);
 	}
 
 
@@ -337,26 +361,24 @@ void myInit(void)
 
 void drawPolyDino()
 {
-
 	glColor3f(1.0f, 0.0f, 0.0f);
 	int count = 0, x1, y1, x2, y2;
-	rewind(fp);
-	while (!feof(fp))
+	while (count< vertexList.size())
 	{
 		count++;
 		if (count>2)
 		{
 			x1 = x2;
 			y1 = y2;
-			count = 2;
+			//count = 2;
 		}
 		if (count == 1)
 		{
-			fscanf(fp, "%d,%d", &x1, &y1);
+			fscanf(stream, "%d,%d", &x1, &y1);
 		}
 		else
 		{
-			fscanf(fp, "%d,%d", &x2, &y2);
+			fscanf(stream, "%d,%d", &x2, &y2);
 			printf("\n%d,%d", x2, y2);
 			glBegin(GL_LINES);
 			glVertex2i(x1, y1);
@@ -372,20 +394,118 @@ void drawPolyDino()
 
 }
 
-void drawDino(void)
+void display(void)
 {
-	initEdgeTable();
-	drawPolyDino();
-	printf("\nTable");
-	printTable();
+	
+	glPointSize(10);
+	
+	glBegin(GL_POINTS);
+	glColor3f(0.0, 0.0, 1.0);
+	glVertex2f(500,500);
+	glEnd();
+	
+	glBegin(GL_POINTS);
+	glColor3f(0.0, 1.0, 0.0);
+	glVertex2f(500, 530);
+	glEnd();
+	
+	glBegin(GL_POINTS);
+	glColor3f(1.0, 0.0, 0.0);
+	glVertex2f(500, 560);
+	glEnd();
 
-	ScanlineFill();//actual calling of scanline filling..
+	glFlush();
 }
+
+void drawPoint(int x, int y) {
+	x = x ;
+	y = maxWd - y;
+	glPointSize(2);
+	glBegin(GL_POINTS);
+	glColor3f(0.0, 0.0, 0.0);
+	glVertex2f(x, y);
+	glEnd();
+	glFlush();
+}
+
+void MouseFunc(int button, int state, int x, int y) {
+	printf("%d %d ", x, maxWd-y);
+	if (x > 490 && x < 510 && maxWd-y > 490 && maxWd - y<510) {
+		glColor3f(0.0, 0.0, 1.0);
+		r = 0.0;
+		g = 0.0;
+		b = 1.0;
+	}
+
+	if (x > 490 && x < 510 && maxWd - y > 520 && maxWd - y<540) {
+		glColor3f(0.0, 1.0, 0.0);
+		r = 0.0;
+		g = 1.0;
+		b = 0.0;
+	}
+
+	if (x > 490 && x < 510 && maxWd - y > 550 && maxWd - y<570) {
+		glColor3f(1.0, 0.0, 0.0);
+		r = 1.0;
+		g = 0.0;
+		b = 0.0;
+	}
+}
+
+void myMouseFunc(int x, int y)
+{
+	
+		drawPoint(x, y);
+		Point p(x,maxWd-y);
+		//("x and y %d %d after saving in points %d %d",x,y, p.getX(),p.getY());
+		vertexList.push_back(p);
+}
+void print() {
+	int x1, y1, x2, y2;
+	glBegin(GL_LINES);
+	glColor3f(1.0, 0.0, 0.0);
+	for (unsigned i = 0; i < vertexList.size(); i++)
+	{
+		if (i == 0) {
+			x1 = vertexList.at(i).x;
+			y1 = vertexList.at(i).y;
+		}
+		if (i >= 2) {
+			x1 = x2;
+			y1 = y2;
+			x2 = vertexList.at(i).x;
+			y2 = vertexList.at(i).y;
+			glVertex2i(x1, y1);
+			glVertex2i(x2,y2);
+			storeEdgeInTable(x1, y1, x2, y2);
+		}
+		else {
+			x2 = vertexList.at(i).x;
+			y2 = vertexList.at(i).y;
+			glVertex2i(x1, y1);
+			glVertex2i(x2, y2);
+			storeEdgeInTable(x1, y1, x2, y2);
+		}
+	}
+	glEnd();
+	glFlush();
+}
+void MyKeyboardFunc(unsigned char Key, int x, int y)
+{
+	if ( Key == char(13)) {
+		
+		print();
+		ScanlineFill();
+		vertexList.clear();
+		initEdgeTable();
+	}
+}
+
 
 void main(int argc, char** argv)
 {
-	fp = fopen("PolyDino.txt", "r");
-	if (fp == NULL)
+	stream = fopen("PolyDino.txt", "r");
+	if (stream == NULL)
 	{
 		printf("Could not open file");
 		return;
@@ -396,8 +516,12 @@ void main(int argc, char** argv)
 	glutInitWindowPosition(100, 150);
 	glutCreateWindow("Scanline filled dinosaur");
 	myInit();
-	glutDisplayFunc(drawDino);
+	glutKeyboardFunc(MyKeyboardFunc);
+	glutMouseFunc(MouseFunc);
+	glutMotionFunc(myMouseFunc);
+	glutDisplayFunc(display);
+	glutSetCursor(GLUT_CURSOR_CROSSHAIR);
 
 	glutMainLoop();
-	fclose(fp);
+	fclose(stream);
 }
